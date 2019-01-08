@@ -31,6 +31,7 @@ class DPPO(object):
         self.epsilon_init=0.1
         self.last_states=self.venv.reset()
         self.test_iter=test_iter
+        self.saver=tf.train.Saver([t for t in tf.trainable_variables()])
 
         with tf.variable_scope("c_loss"):
             TD_error = self.model.returns - self.model.value
@@ -47,13 +48,14 @@ class DPPO(object):
             self.a_loss = -tf.reduce_mean(tf.minimum(surr, tf.clip_by_value(ratio, 1. - self.epsilon,
                                                                             1. + self.epsilon) * self.model.advantages))
         with tf.variable_scope("entropy_loss"):
-            self.entropy_loss=0.01*tf.reduce_mean(pi_prob*logpi_prob)
+            #self.entropy_loss=0.01*tf.reduce_mean(pi_prob*logpi_prob)
+            self.entropy_loss=0.01*tf.reduce_mean(tf.reduce_sum(tf.nn.softmax(self.model.oldpi)*tf.nn.log_softmax(self.model.pi),axis=1))
 
         with tf.variable_scope("update_pi"):
             self.update_oldpi_op = [oldp.assign(p) for p, oldp in zip(self.model.pi_params, self.model.oldpi_params)]
 
         with tf.variable_scope("total_loss"):
-            self.loss=self.c_loss+self.a_loss-self.entropy_loss
+            self.loss=self.c_loss+self.a_loss+self.entropy_loss
 
         with tf.variable_scope("train_op"):
             opt = tf.train.AdamOptimizer(self.lr, epsilon=1e-5)
@@ -98,22 +100,23 @@ class DPPO(object):
             epsilon=self.epsilon_init*(1.-decay)
             memo,steps=self.interact()
             states_m,actions_m,rewards_m,next_states_m,dones_m=map(np.array,zip(*memo))
+            rewards_m=np.reshape(rewards_m,(T,N,1))
+            dones_m=np.reshape(dones_m,(T,N,1))
+            states_m=np.reshape(states_m,(N*T,)+states_m.shape[2:])
+            next_states_m=np.reshape(next_states_m,(N*T,)+next_states_m.shape[2:])
 
-            states_m_=np.reshape(states_m,(N*T,)+states_m.shape[2:])
-            next_states_m_=np.reshape(states_m,(N*T,)+states_m.shape[2:])
+            states_m=states_m.astype(np.float32)        #(1024,84,84,4)
+            next_states_m = next_states_m.astype(np.float32)
 
-            states_m_=states_m_.astype(np.float32)        #(1024,84,84,4)
-            next_states_m_ = next_states_m_.astype(np.float32)
-
-            states_values=self.get_v(states_m_)       #(1024,1)
-            next_states_values=self.get_v(next_states_m_)
+            states_values=self.get_v(states_m)       #(1024,1)
+            next_states_values=self.get_v(next_states_m)
 
             states_values=np.reshape(states_values,(T,N,1))     #(128,8,1)
             next_states_values=np.reshape(next_states_values,(T,N,1))
 
             advantages,returns=self.tools.calculate_advantage(rewards_m,states_values,next_states_values,dones_m)
-            advantages=np.expand_dims(advantages,axis=2)
-            returns=np.expand_dims(returns,axis=2)
+            # advantages=np.expand_dims(advantages,axis=2)
+            # returns=np.expand_dims(returns,axis=2)
 
             # Training stage
             print("\rUpdate oldpi")
@@ -128,13 +131,17 @@ class DPPO(object):
                 rewards_m=np.reshape(rewards_m,(steps,1))
                 dones_m=np.reshape(dones_m,(steps,1))
 
+
+
                 index=np.arange(steps)
                 np.random.shuffle(index)
 
                 for start in range(0, steps, self.batch_size):
                     mb_inds=index[start:start+self.batch_size]
                     batch_states, batch_actions, batch_rewards, batch_next_states, batch_dones,batch_advantages,batch_returns = \
-                        [arr[mb_inds] for arr in [states_m_, actions_m,rewards_m,next_states_m_,dones_m,advantages,returns]]
+                        [arr[mb_inds] for arr in [states_m, actions_m,rewards_m,next_states_m,dones_m,advantages,returns]]
+
+                    batch_advantages = (batch_advantages - batch_advantages.mean()) / (batch_advantages.std() + 1e-5)
                     self.sess.run(self.train_op, feed_dict={self.model.s: batch_states, self.model.acts: batch_actions,
                                                             self.model.R: batch_rewards,
                                                             self.model.advantages: batch_advantages,
@@ -147,7 +154,7 @@ class DPPO(object):
             if self.taken_steps%self.test_iter==0:
                 ep_aver=self.test()
                 print("Test mode in taken_steps: {}, average_reward: {}".format(self.taken_steps,ep_aver))
-
+        self.saver.save(self.sess,"./actor.ckpt")
     def interact(self):
         N = self.num_workers
         T = self.work_steps
@@ -162,7 +169,7 @@ class DPPO(object):
 
         return self.tools.replay_memo,steps
     def test(self):
-        test_env=Monitor(self.test_env,"./exp2",video_callable=lambda count:count%1==0,resume=True)
+        test_env=Monitor(self.test_env,"./exp3",video_callable=lambda count:count%1==0,resume=True)
         ep_aver=0
         ep=[]
         for i in range(self.num_workers):
@@ -192,7 +199,7 @@ class DPPO(object):
 #     env = wrap_deepmind(env, episode_life=False, clip_rewards=False)
 #     return env
 #
-# ENV_ID = "BreakoutNoFrameskip-v0"
+# ENV_ID = "BreakoutNoFrameskip-v4"
 #
 # env_fn = []
 # for rank in range(8):
@@ -201,7 +208,7 @@ class DPPO(object):
 # venv = SubprocVecEnv(env_fn)
 # venv = VecFrameStack(venv, 4)
 #
-# test_env = make_env("BreakoutNoFrameskip-v0", 0, 0)
+# test_env = make_env("BreakoutNoFrameskip-v4", 0, 0)
 # test_env = FrameStack(test_env, 4)
 #
 # sess = tf.Session()
@@ -209,5 +216,5 @@ class DPPO(object):
 # tools = utils(memory_size=128, batch_size=256, gamma=0.99, gae_lambda=0.95)
 #
 # dppo = DPPO(sess=sess, venv=venv, model=models, total_steps=1e7, test_env=test_env, tools=tools, batch_size=256,
-#             work_steps=128, lr_init=2.5e-4, test_iter=1024 * 10)
+#             work_steps=128, lr_init=2.5e-4, test_iter=1024 * 100)
 # dppo.run()

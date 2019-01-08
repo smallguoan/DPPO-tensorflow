@@ -12,6 +12,7 @@ class Models(object):
         self.advantages=tf.placeholder(tf.float32,shape=[None,1],name="advantages")
         self.returns=tf.placeholder(tf.float32,shape=[None,1],name="Returns")
         self.action_num = action_num
+
         #Build pi and old pi
         self.pi,self.value,self.pi_params=self._build_net("Pi",Trainable=True)
         self.oldpi,self.oldvalue,self.oldpi_params=self._build_net("OldPi",Trainable=False)

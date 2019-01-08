@@ -36,15 +36,24 @@ class utils(object):
 
     def calculate_advantage(self,reward,state_value,next_state_value,done):
         advantage=np.zeros_like(reward)
-        advantage_t=0
+        advantage_t=np.zeros_like(reward[0])
+        #print(advantage_t.shape)
+        assert advantage_t.shape==(8,1)
+        #print(advantage_t.shape)
         for t in reversed(range(self.memory_size)):
 
-            delta=reward[t]+(1-done[t])*self.gamma*np.squeeze(next_state_value)[t]-np.squeeze(state_value)[t]
+            delta=reward[t]+(1-done[t])*self.gamma*next_state_value[t]-state_value[t]
             advantage_t=delta+self.gae*(1-done[t])*advantage_t
             advantage[t]=advantage_t
 
-        returns=state_value[:self.memory_size,0]+advantage
+        #print(advantage.shape)
+        #returns=state_value[:self.memory_size,0]+advantage
+
+        assert advantage.shape==(128,8,1)
+        returns=state_value[:self.memory_size]+advantage
+        #print(np.squeeze(state_value)[:self.memory_size].shape)
         #assert advantage.shape==(128,8)   #Just confirming for atari games
+        assert returns.shape==(128,8,1)
         return advantage,returns
 
 # class Preprocess(object):

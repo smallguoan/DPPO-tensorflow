@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser(description='DPPO', formatter_class=argparse.Ar
 parser.add_argument('--env_id', type=str,default='PongNoFrameskip-v4',help='Gym environment id')
 parser.add_argument('--num_workers', type=int, default=8, help='number of parallel actors')
 parser.add_argument('--opt_epochs', type=int, default=3, help='optimization epochs between environment interaction')
-parser.add_argument('--total_steps', type=int, default=1e7, help='total number of environment steps to take')
+parser.add_argument('--total_steps', type=int, default=int(1e7), help='total number of environment steps to take')
 parser.add_argument('--lr_init',type=float,default=2.5e-4,help='learning rate at the beginning of training')
 parser.add_argument('--work_steps',type=int,default=128,help='steps of collecting data for workers')
 parser.add_argument('--test_iter',type=int,default=1024*100,help='steps of testing agent during training')
